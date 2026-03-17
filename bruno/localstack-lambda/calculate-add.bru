@@ -1,0 +1,28 @@
+meta {
+  name: calculate-add
+  type: http
+  seq: 2
+}
+
+post {
+  url: {{traefikUrl}}/calculate
+  body: json
+  auth: inherit
+}
+
+headers {
+  Host: {{apiHost}}
+}
+
+body:json {
+  {
+    "a": 2,
+    "b": 3,
+    "operation": "add"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}

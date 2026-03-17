@@ -1,0 +1,20 @@
+meta {
+  name: healthcheck
+  type: http
+  seq: 1
+}
+
+get {
+  url: {{traefikUrl}}/healthcheck
+  body: none
+  auth: inherit
+}
+
+headers {
+  Host: {{apiHost}}
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+}
