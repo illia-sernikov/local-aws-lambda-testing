@@ -1,0 +1,32 @@
+# Environment and secrets
+.env
+.env.*
+!.env.example
+
+# Build outputs
+build/
+dist/
+bin/
+
+# Pulumi state
+.pulumi/
+Pulumi.*.yaml
+
+# Traefik dynamic configuration
+traefik/
+
+# Go artifacts
+*.test
+*.out
+coverage.out
+
+# Logs
+*.log
+
+# OS / editor files
+.DS_Store
+.idea/
+.vscode/
+
+# Local tooling cache
+.mise/

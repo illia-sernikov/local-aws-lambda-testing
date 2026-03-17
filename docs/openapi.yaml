@@ -1,0 +1,117 @@
+openapi: 3.0.3
+info:
+  title: Lambda Localstack API
+  version: 1.0.0
+  description: Simple API for healthcheck and calculate endpoints.
+servers:
+  - url: https://example.execute-api.us-east-1.amazonaws.com/test
+paths:
+  /healthcheck:
+    get:
+      summary: Healthcheck endpoint
+      operationId: getHealthcheck
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:000000000000:function:handler/invocations
+        passthroughBehavior: when_no_match
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+              example:
+                status: ok
+        '404':
+          description: Route not found
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+  /calculate:
+    post:
+      summary: Perform arithmetic operation
+      operationId: postCalculate
+      x-amazon-apigateway-integration:
+        type: aws_proxy
+        httpMethod: POST
+        uri: arn:aws:apigateway:us-east-1:lambda:path/2015-03-31/functions/arn:aws:lambda:us-east-1:000000000000:function:handler/invocations
+        passthroughBehavior: when_no_match
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CalculateRequest'
+            example:
+              a: 10
+              b: 2
+              operation: divide
+      responses:
+        '200':
+          description: Calculation result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CalculateResponse'
+              example:
+                result: 5
+        '400':
+          description: Invalid request data
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+components:
+  schemas:
+    HealthResponse:
+      type: object
+      properties:
+        status:
+          type: string
+          example: ok
+      required:
+        - status
+    CalculateRequest:
+      type: object
+      properties:
+        a:
+          type: number
+          format: double
+        b:
+          type: number
+          format: double
+        operation:
+          type: string
+          enum:
+            - add
+            - subtract
+            - multiply
+            - divide
+      required:
+        - a
+        - b
+        - operation
+    CalculateResponse:
+      type: object
+      properties:
+        result:
+          type: number
+          format: double
+      required:
+        - result
+    ErrorResponse:
+      type: object
+      properties:
+        error:
+          type: string
+      required:
+        - error
