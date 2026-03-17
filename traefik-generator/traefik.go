@@ -5,9 +5,22 @@ import (
 	"log"
 	"os"
 	"path/filepath"
+	"regexp"
+	"strings"
 
 	"go.yaml.in/yaml/v4"
 )
+
+var pulumiAutoNameSuffix = regexp.MustCompile(`-[0-9a-f]{7,}$`)
+
+func staticName(name, fallback string) string {
+	trimmed := strings.TrimSpace(name)
+	if trimmed == "" {
+		trimmed = fallback
+	}
+
+	return pulumiAutoNameSuffix.ReplaceAllString(trimmed, "")
+}
 
 func BuildConfig(apis []ApiInfo) TraefikConfig {
 	cfg := TraefikConfig{
@@ -19,14 +32,15 @@ func BuildConfig(apis []ApiInfo) TraefikConfig {
 	}
 
 	for _, api := range apis {
+		stableName := staticName(api.Name, api.ApiID)
 
-		routerName := api.Name + "-router"
-		serviceName := api.Name + "-service"
-		middlewareName := api.Name + "-path"
+		routerName := stableName + "-router"
+		serviceName := stableName + "-service"
+		middlewareName := stableName + "-path"
 
 		host := fmt.Sprintf(
 			"%s.api.localhost.localstack",
-			api.Name,
+			stableName,
 		)
 
 		cfg.HTTP.Routers[routerName] = Router{
