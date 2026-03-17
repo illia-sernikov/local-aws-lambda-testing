@@ -1,3 +1,0 @@
-name: lambda-localstack-infra
-runtime: go
-description: Pulumi stack for Lambda + API Gateway

@@ -22,14 +22,19 @@ Supported operations: `add`, `subtract`, `multiply`, `divide`.
 
 ## Project layout
 
-- Lambda entrypoint: `cmd/handler/main.go`
-- Request handling and business logic: `internal/handler/handler.go`
+- Lambda package guide: `lambda/README.md`
+- Deploy package guide: `deploy/README.md`
+- Lambda entrypoint: `lambda/cmd/handler/main.go`
+- Request handling and business logic: `lambda/internal/handler/handler.go`
+- Lambda package module/dependencies: `lambda/go.mod`
 - API contract used by API Gateway: `docs/openapi.yaml`
-- Pulumi stack (LocalStack provider/resources): `infra/main.go`
+- Pulumi stack (LocalStack provider/resources): `deploy/pulumi/main.go`
+- Traefik config generator (deploy utility): `deploy/traefik-config-generator`
+- Traefik dynamic config mount: `deploy/traefik/dynamic/`
 
 ## Prerequisites
 
-- Go `1.24.13` (see `go.mod` / `mise.toml`)
+- Go `1.24.13` (see `lambda/go.mod` / `mise.toml`)
 - Docker and Docker Compose
 - Pulumi CLI
 - `zip`
@@ -43,29 +48,37 @@ LocalStack credentials are set to `test` in the stack and compose setup.
 docker compose up -d
 ```
 
+If your Docker CLI does not include the Compose plugin, use:
+
+```bash
+docker-compose up -d
+```
+
 This starts:
 
 - `localstack` on `http://localhost:4566`
 - `traefik` on `http://localhost` (dashboard on `http://localhost:8080`)
 - `traefik-config-generator` to refresh Traefik routes from discovered API Gateway APIs
 
+Generated Traefik config is written to `deploy/traefik/dynamic/apis.yaml`.
+
 ## Build
 
 ```bash
-go mod tidy
-go build ./...
+(cd lambda && go mod tidy)
+(cd lambda && go build ./...)
 make package-lambda
 ```
 
 Build output:
 
-- Linux Lambda bootstrap binary: `build/bootstrap`
-- Lambda artifact zip used by Pulumi: `build/lambda.zip`
+- Linux Lambda bootstrap binary: `lambda/build/bootstrap`
+- Lambda artifact zip used by Pulumi: `lambda/build/lambda.zip`
 
 ## Deploy (Pulumi to LocalStack)
 
 ```bash
-cd infra
+cd deploy/pulumi
 pulumi login --local
 pulumi stack init local   # run once
 pulumi up
@@ -79,14 +92,14 @@ make deploy
 
 Useful stack config:
 
-- `artifactPath` (default: `../build/lambda.zip`)
+- `artifactPath` (default: `../../lambda/build/lambda.zip`)
 - `enableExecutionLogging` (default: `false`)
 
 Example:
 
 ```bash
-cd infra
-pulumi config set artifactPath ../build/lambda.zip
+cd deploy/pulumi
+pulumi config set artifactPath ../../lambda/build/lambda.zip
 pulumi config set enableExecutionLogging true
 ```
 
@@ -95,7 +108,7 @@ pulumi config set enableExecutionLogging true
 Get deployed API base URL from stack output:
 
 ```bash
-API_URL=$(cd infra && pulumi stack output apiEndpoint)
+API_URL=$(cd deploy/pulumi && pulumi stack output apiEndpoint)
 ```
 
 Healthcheck:
