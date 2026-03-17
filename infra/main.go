@@ -21,6 +21,10 @@ const (
 	stageName           = "dev"
 )
 
+type apiGatewayLoggingResources struct {
+	accessLogGroupName pulumi.StringOutput
+}
+
 func providerOptions(provider *aws.Provider) []pulumi.ResourceOption {
 	return []pulumi.ResourceOption{pulumi.Provider(provider)}
 }
@@ -65,10 +69,56 @@ func newLocalstackProvider(ctx *pulumi.Context) (*aws.Provider, error) {
 	})
 }
 
+func configureAPIGatewayExecutionLogging(
+	ctx *pulumi.Context,
+	providerOpts []pulumi.ResourceOption,
+	restAPI *apigateway.RestApi,
+	stage *apigateway.Stage,
+) error {
+	apigwCloudWatchRole, err := iam.NewRole(ctx, "apigateway-cloudwatch-role", &iam.RoleArgs{
+		AssumeRolePolicy: assumeRolePolicy("apigateway.amazonaws.com"),
+	}, providerOpts...)
+	if err != nil {
+		return err
+	}
+
+	_, err = iam.NewRolePolicyAttachment(ctx, "apigateway-push-cwlogs", &iam.RolePolicyAttachmentArgs{
+		Role:      apigwCloudWatchRole.Name,
+		PolicyArn: pulumi.String("arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"),
+	}, providerOpts...)
+	if err != nil {
+		return err
+	}
+
+	_, err = apigateway.NewAccount(ctx, "apigateway-account", &apigateway.AccountArgs{
+		CloudwatchRoleArn: apigwCloudWatchRole.Arn,
+	}, providerOpts...)
+	if err != nil {
+		return err
+	}
+
+	_, err = apigateway.NewMethodSettings(ctx, "api-method-settings", &apigateway.MethodSettingsArgs{
+		RestApi:    restAPI.ID(),
+		StageName:  stage.StageName,
+		MethodPath: pulumi.String("*/*"),
+		Settings: apigateway.MethodSettingsSettingsArgs{
+			LoggingLevel:     pulumi.String("INFO"),
+			DataTraceEnabled: pulumi.Bool(true),
+			MetricsEnabled:   pulumi.Bool(true),
+		},
+	}, providerOpts...)
+	if err != nil {
+		return err
+	}
+
+	return nil
+}
+
 func main() {
 	pulumi.Run(func(ctx *pulumi.Context) error {
 		cfg := config.New(ctx, "")
 		artifactPath := mustConfigOrDefault(cfg, "artifactPath", defaultArtifactPath)
+		enableExecutionLogging := cfg.GetBool("enableExecutionLogging")
 
 		openapiSpec, err := os.ReadFile(openAPISpecPath)
 		if err != nil {
@@ -91,28 +141,6 @@ func main() {
 		_, err = iam.NewRolePolicyAttachment(ctx, "lambda-basic-exec", &iam.RolePolicyAttachmentArgs{
 			Role:      role.Name,
 			PolicyArn: pulumi.String("arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole"),
-		}, providerOpts...)
-		if err != nil {
-			return err
-		}
-
-		apigwCloudWatchRole, err := iam.NewRole(ctx, "apigateway-cloudwatch-role", &iam.RoleArgs{
-			AssumeRolePolicy: assumeRolePolicy("apigateway.amazonaws.com"),
-		}, providerOpts...)
-		if err != nil {
-			return err
-		}
-
-		_, err = iam.NewRolePolicyAttachment(ctx, "apigateway-push-cwlogs", &iam.RolePolicyAttachmentArgs{
-			Role:      apigwCloudWatchRole.Name,
-			PolicyArn: pulumi.String("arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"),
-		}, providerOpts...)
-		if err != nil {
-			return err
-		}
-
-		_, err = apigateway.NewAccount(ctx, "apigateway-account", &apigateway.AccountArgs{
-			CloudwatchRoleArn: apigwCloudWatchRole.Arn,
 		}, providerOpts...)
 		if err != nil {
 			return err
@@ -153,45 +181,47 @@ func main() {
 			return err
 		}
 
-		apigwAccessLogs, err := cloudwatch.NewLogGroup(ctx, "apigateway-access-logs", &cloudwatch.LogGroupArgs{
-			Name: pulumi.Sprintf("/aws/apigateway/%s/%s/access", restAPI.ID(), stageName),
-		}, providerOpts...)
-		if err != nil {
-			return err
-		}
-
-		stage, err := apigateway.NewStage(ctx, "dev-stage", &apigateway.StageArgs{
+		stageArgs := &apigateway.StageArgs{
 			RestApi:    restAPI.ID(),
 			Deployment: deployment.ID(),
 			StageName:  pulumi.String(stageName),
-			AccessLogSettings: apigateway.StageAccessLogSettingsArgs{
+		}
+
+		var loggingResources *apiGatewayLoggingResources
+		if enableExecutionLogging {
+			apigwAccessLogs, err := cloudwatch.NewLogGroup(ctx, "apigateway-access-logs", &cloudwatch.LogGroupArgs{
+				Name: pulumi.Sprintf("/aws/apigateway/%s/%s/access", restAPI.ID(), stageName),
+			}, providerOpts...)
+			if err != nil {
+				return err
+			}
+
+			stageArgs.AccessLogSettings = apigateway.StageAccessLogSettingsArgs{
 				DestinationArn: apigwAccessLogs.Arn,
 				Format:         pulumi.String("{\"requestId\":\"$context.requestId\",\"ip\":\"$context.identity.sourceIp\",\"requestTime\":\"$context.requestTime\",\"httpMethod\":\"$context.httpMethod\",\"routeKey\":\"$context.resourcePath\",\"status\":\"$context.status\",\"responseLength\":\"$context.responseLength\",\"integrationError\":\"$context.integrationErrorMessage\"}"),
-			},
-		}, providerOpts...)
+			}
+
+			loggingResources = &apiGatewayLoggingResources{accessLogGroupName: apigwAccessLogs.Name}
+		}
+
+		stage, err := apigateway.NewStage(ctx, "dev-stage", stageArgs, providerOpts...)
 		if err != nil {
 			return err
 		}
 
-		_, err = apigateway.NewMethodSettings(ctx, "api-method-settings", &apigateway.MethodSettingsArgs{
-			RestApi:    restAPI.ID(),
-			StageName:  stage.StageName,
-			MethodPath: pulumi.String("*/*"),
-			Settings: apigateway.MethodSettingsSettingsArgs{
-				LoggingLevel:     pulumi.String("INFO"),
-				DataTraceEnabled: pulumi.Bool(true),
-				MetricsEnabled:   pulumi.Bool(true),
-			},
-		}, providerOpts...)
-		if err != nil {
-			return err
+		if enableExecutionLogging {
+			if err := configureAPIGatewayExecutionLogging(ctx, providerOpts, restAPI, stage); err != nil {
+				return err
+			}
 		}
 
 		ctx.Export("apiEndpoint", pulumi.Sprintf("%s/_aws/execute-api/%s/%s", localstackURL, restAPI.ID(), stage.StageName))
 		ctx.Export("healthcheckUrl", pulumi.Sprintf("%s/_aws/execute-api/%s/%s/healthcheck", localstackURL, restAPI.ID(), stage.StageName))
 		ctx.Export("calculateUrl", pulumi.Sprintf("%s/_aws/execute-api/%s/%s/calculate", localstackURL, restAPI.ID(), stage.StageName))
-		ctx.Export("apiGatewayExecutionLogGroup", pulumi.Sprintf("API-Gateway-Execution-Logs_%s/%s", restAPI.ID(), stage.StageName))
-		ctx.Export("apiGatewayAccessLogGroup", apigwAccessLogs.Name)
+		if enableExecutionLogging {
+			ctx.Export("apiGatewayExecutionLogGroup", pulumi.Sprintf("API-Gateway-Execution-Logs_%s/%s", restAPI.ID(), stage.StageName))
+			ctx.Export("apiGatewayAccessLogGroup", loggingResources.accessLogGroupName)
+		}
 		ctx.Export("lambdaName", fn.Name)
 
 		fmt.Println("Pulumi deployment configured for LocalStack")
