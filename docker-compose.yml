@@ -15,6 +15,7 @@ services:
 
   traefik:
     image: traefik:3.6
+    container_name: traefik
     command:
       - --providers.file.directory=/etc/traefik/dynamic
       - --providers.file.watch=true
@@ -26,8 +27,9 @@ services:
     volumes:
       - ./traefik/dynamic:/etc/traefik/dynamic
 
-  traefik-generator:
-    build: ./traefik-generator
+  traefik-config-generator:
+    build: ./traefik-config-generator
+    container_name: traefik-config-generator
     depends_on:
       - localstack
     environment:

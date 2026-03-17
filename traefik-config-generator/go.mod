@@ -1,4 +1,4 @@
-module traefik-generator
+module traefik-config-generator
 
 go 1.24.13
 
